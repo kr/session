@@ -16,11 +16,17 @@ const (
 )
 
 type Config struct {
-	// Cookie initializes the cookie to encode each
-	// session. If Name, Path, or Domain are empty,
-	// "session", "/" and the request host are used,
-	// respectively.
-	http.Cookie
+	// The cookie name.
+	// If empty, "session" is used.
+	Name string
+
+	// The cookie path.
+	// If empty, "/" is used.
+	Path string
+
+	// The cookie domain.
+	// If empty, the request host is used.
+	Domain string
 
 	// Maximum idle time for a session.
 	// This is used to set cookie expiration and
@@ -42,10 +48,10 @@ func (c *Config) maxAge() time.Duration {
 }
 
 func (c *Config) name() string {
-	if c.Cookie.Name == "" {
+	if c.Name == "" {
 		return "session"
 	}
-	return c.Cookie.Name
+	return c.Name
 }
 
 // Indicates the encoded session cookie is too long
@@ -98,10 +104,15 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	}
 	copy(out, nonce[:])
 	secretbox.Seal(out[24:], tb, &nonce, config.Keys[0])
-	cookie := config.Cookie
-	cookie.Name = config.name()
-	cookie.Value = string(out)
-	cookie.Expires = now.Add(config.maxAge())
+	cookie := &http.Cookie{
+		Name:     config.name(),
+		Value:    string(out),
+		Expires:  now.Add(config.maxAge()),
+		Path:     config.Path,
+		Domain:   config.Domain,
+		Secure:   true,
+		HttpOnly: true,
+	}
 	if cookie.Path == "" {
 		cookie.Path = "/"
 	}
