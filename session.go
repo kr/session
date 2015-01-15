@@ -31,9 +31,6 @@ type Config struct {
 	Keys []*fernet.Key
 }
 
-// Note, you must at least set Keys to set a session.
-var DefaultConfig = &Config{}
-
 func (c *Config) maxAge() time.Duration {
 	if c.MaxAge == 0 {
 		return 100 * 365 * 24 * time.Hour
@@ -57,11 +54,7 @@ var (
 
 // Get decodes a session from r into v.
 // See encoding/json for decoding behavior.
-// If config is nil, DefaultConfig is used.
 func Get(r *http.Request, v interface{}, config *Config) error {
-	if config == nil {
-		config = DefaultConfig
-	}
 	cookie, err := r.Cookie(config.name())
 	if err != nil {
 		return err
@@ -76,11 +69,7 @@ func Get(r *http.Request, v interface{}, config *Config) error {
 
 // Set encodes a session from v into a cookie on w.
 // See encoding/json for encoding behavior.
-// If config is nil, DefaultConfig is used.
 func Set(w http.ResponseWriter, v interface{}, config *Config) error {
-	if config == nil {
-		config = DefaultConfig
-	}
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
