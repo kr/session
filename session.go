@@ -3,9 +3,10 @@ package session
 import (
 	"encoding/json"
 	"errors"
-	"github.com/fernet/fernet-go"
 	"net/http"
 	"time"
+
+	"github.com/fernet/fernet-go"
 )
 
 const (
@@ -23,7 +24,7 @@ type Config struct {
 	// This is used to set cookie expiration and
 	// enforce TTL on fernet tokens.
 	// If 0, it is taken to be 100 years.
-	Age time.Duration
+	MaxAge time.Duration
 
 	// List of acceptable keys for decoding stored sessions.
 	// Element 0 will be used for encoding.
@@ -33,11 +34,11 @@ type Config struct {
 // Note, you must at least set Keys to set a session.
 var DefaultConfig = &Config{}
 
-func (c *Config) age() time.Duration {
-	if c.Age == 0 {
+func (c *Config) maxAge() time.Duration {
+	if c.MaxAge == 0 {
 		return 100 * 365 * 24 * time.Hour
 	}
-	return c.Age
+	return c.MaxAge
 }
 
 func (c *Config) name() string {
@@ -66,7 +67,7 @@ func Get(r *http.Request, v interface{}, config *Config) error {
 		return err
 	}
 	t := []byte(cookie.Value)
-	b := fernet.VerifyAndDecrypt(t, config.age(), config.Keys)
+	b := fernet.VerifyAndDecrypt(t, config.maxAge(), config.Keys)
 	if b == nil {
 		return ErrInvalid
 	}
@@ -91,7 +92,7 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	cookie := config.Cookie
 	cookie.Name = config.name()
 	cookie.Value = string(t)
-	cookie.Expires = time.Now().Add(config.age())
+	cookie.Expires = time.Now().Add(config.maxAge())
 	if cookie.Path == "" {
 		cookie.Path = "/"
 	}
