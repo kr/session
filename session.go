@@ -71,9 +71,8 @@ func Get(r *http.Request, v interface{}, config *Config) error {
 	t := []byte(cookie.Value)
 	var nonce [24]byte
 	copy(nonce[:], t)
-	out := make([]byte, len(t)-secretbox.Overhead-24)
 	for _, key := range config.Keys {
-		if tb, ok := secretbox.Open(out, t[24:], &nonce, key); ok {
+		if tb, ok := secretbox.Open(nil, t[24:], &nonce, key); ok {
 			ts := binary.BigEndian.Uint64(tb)
 			if time.Since(time.Unix(int64(ts), 0)) > config.maxAge() {
 				return ErrInvalid
@@ -96,14 +95,12 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	tb := make([]byte, len(b)+8)
 	binary.BigEndian.PutUint64(tb, uint64(now.Unix()))
 	copy(tb[8:], b)
-	out := make([]byte, 24+len(tb)+secretbox.Overhead)
 	var nonce [24]byte
 	_, err = rand.Read(nonce[:])
 	if err != nil {
 		return err
 	}
-	copy(out, nonce[:])
-	secretbox.Seal(out[24:], tb, &nonce, config.Keys[0])
+	out := secretbox.Seal(nonce[:], tb, &nonce, config.Keys[0])
 	cookie := &http.Cookie{
 		Name:     config.name(),
 		Value:    string(out),
