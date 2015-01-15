@@ -17,7 +17,7 @@ const (
 
 type Config struct {
 	// Cookie initializes the cookie to encode each
-	// session. If Name, Path, and Domain are empty,
+	// session. If Name, Path, or Domain are empty,
 	// "session", "/" and the request host are used,
 	// respectively.
 	http.Cookie
