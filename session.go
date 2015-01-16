@@ -2,6 +2,7 @@ package session
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -68,7 +69,10 @@ func Get(r *http.Request, v interface{}, config *Config) error {
 	if err != nil {
 		return err
 	}
-	t := []byte(cookie.Value)
+	t, err := base64.URLEncoding.DecodeString(cookie.Value)
+	if err != nil {
+		return err
+	}
 	var nonce [24]byte
 	copy(nonce[:], t)
 	for _, key := range config.Keys {
@@ -103,7 +107,7 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	out := secretbox.Seal(nonce[:], tb, &nonce, config.Keys[0])
 	cookie := &http.Cookie{
 		Name:     config.name(),
-		Value:    string(out),
+		Value:    base64.URLEncoding.EncodeToString(out),
 		Expires:  now.Add(config.maxAge()),
 		Path:     config.Path,
 		Domain:   config.Domain,
