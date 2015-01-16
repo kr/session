@@ -29,6 +29,12 @@ type Config struct {
 	// If empty, the request host is used.
 	Domain string
 
+	// Whether the cookie should be limited to HTTPS.
+	Secure bool
+
+	// Whether the cookie will not be available to JavaScript.
+	HTTPOnly bool
+
 	// Maximum idle time for a session.
 	// This is used to set cookie expiration and
 	// enforce a TTL on secret boxes.
@@ -111,8 +117,8 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 		Expires:  now.Add(config.maxAge()),
 		Path:     config.Path,
 		Domain:   config.Domain,
-		Secure:   true,
-		HttpOnly: true,
+		Secure:   config.Secure,
+		HttpOnly: config.HTTPOnly,
 	}
 	if cookie.Path == "" {
 		cookie.Path = "/"
