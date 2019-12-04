@@ -61,10 +61,14 @@ func (c *Config) name() string {
 	return c.Name
 }
 
-// Indicates the encoded session cookie is too long
-// to expect web browsers to store it.
 var (
+	// ErrTooLong indicates that an encoded session cookie is too long
+	// to expect web browsers to store it.
 	ErrTooLong = errors.New("encoded session too long")
+
+	// ErrInvalid indicates that a session cookie could not be decoded,
+	// either because its expiration time is in the past or because none
+	// of the provided keys could decrypt it.
 	ErrInvalid = errors.New("invalid session cookie")
 )
 
