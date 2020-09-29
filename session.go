@@ -35,6 +35,12 @@ type Config struct {
 	// Whether the cookie will not be available to JavaScript.
 	HTTPOnly bool
 
+	// The SameSite attribute of the Set-Cookie HTTP response header allows
+	// you to declare if your cookie should be restricted to a first-party or
+	// same-site context.
+	// https://tools.ietf.org/html/draft-ietf-httpbis-rfc6265bis-06#section-5.3.7
+	SameSite http.SameSite
+
 	// Maximum idle time for a session.
 	// This is used to set cookie expiration and
 	// enforce a TTL on secret boxes.
@@ -59,6 +65,13 @@ func (c *Config) name() string {
 		return "session"
 	}
 	return c.Name
+}
+
+func (c *Config) sameSite() http.SameSite {
+	if c.SameSite == 0 {
+		return http.SameSiteDefaultMode
+	}
+	return c.SameSite
 }
 
 var (
@@ -123,6 +136,7 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 		Domain:   config.Domain,
 		Secure:   config.Secure,
 		HttpOnly: config.HTTPOnly,
+		SameSite: config.sameSite(),
 	}
 	if cookie.Path == "" {
 		cookie.Path = "/"
