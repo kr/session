@@ -1,19 +1,24 @@
 package session
 
 import (
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
-	"golang.org/x/crypto/nacl/secretbox"
+	"filippo.io/age"
 )
 
 const (
 	maxSize = 4093
+)
+
+var (
+	encBig = binary.BigEndian
+	encURL = base64.URLEncoding
 )
 
 type Config struct {
@@ -41,10 +46,17 @@ type Config struct {
 	// If 0, it is taken to be 100 years.
 	MaxAge time.Duration
 
-	// List of acceptable secretbox keys for decoding stored sessions.
-	// Element 0 will be used for encoding.
-	// See golang.org/x/crypto/nacl/secretbox.
-	Keys []*[32]byte
+	// Keys is used to encrypt and decrypt sessions.
+	//
+	// Sessions are encrypted to all keys to facilitate
+	// seamless key rotation. As long as there is an overlap
+	// between the sets of keys on two servers, sessions can
+	// be encrypted and decrypted on either server.
+	//
+	// Overhead (after base64) is about 266 bytes per key.
+	//
+	// See filippo.io/age.
+	Keys []*age.X25519Identity
 }
 
 func (c *Config) maxAge() time.Duration {
@@ -72,52 +84,54 @@ var (
 	ErrInvalid = errors.New("invalid session cookie")
 )
 
-// Get decodes a session from r into v.
+// Get decodes a session from req into v.
 // See encoding/json for decoding behavior.
-func Get(r *http.Request, v interface{}, config *Config) error {
-	cookie, err := r.Cookie(config.name())
+func Get(req *http.Request, v interface{}, config *Config) error {
+	cookie, err := req.Cookie(config.name())
 	if err != nil {
 		return err
 	}
-	t, err := base64.URLEncoding.DecodeString(cookie.Value)
+	ident := make([]age.Identity, len(config.Keys))
+	for i, key := range config.Keys {
+		ident[i] = key
+	}
+	r, err := age.Decrypt(base64.NewDecoder(encURL, strings.NewReader(cookie.Value)), ident...)
 	if err != nil {
 		return err
 	}
-	var nonce [24]byte
-	copy(nonce[:], t)
-	for _, key := range config.Keys {
-		if tb, ok := secretbox.Open(nil, t[24:], &nonce, key); ok {
-			ts := binary.BigEndian.Uint64(tb)
-			if time.Since(time.Unix(int64(ts), 0)) > config.maxAge() {
-				return ErrInvalid
-			}
-			b := tb[8:]
-			return json.Unmarshal(b, v)
-		}
+	var ts int64
+	err = binary.Read(r, encBig, &ts)
+	if err != nil {
+		return err
 	}
-	return ErrInvalid
+	if time.Since(time.Unix(ts, 0)) > config.maxAge() {
+		return errors.New("expired cookie")
+	}
+	return json.NewDecoder(r).Decode(v)
 }
 
 // Set encodes a session from v into a cookie on w.
 // See encoding/json for encoding behavior.
 func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	now := time.Now()
-	b, err := json.Marshal(v)
+	recip := make([]age.Recipient, len(config.Keys))
+	for i, key := range config.Keys {
+		recip[i] = key.Recipient()
+	}
+	out := &strings.Builder{}
+	enc, err := age.Encrypt(base64.NewEncoder(encURL, out), recip...)
 	if err != nil {
 		return err
 	}
-	tb := make([]byte, len(b)+8)
-	binary.BigEndian.PutUint64(tb, uint64(now.Unix()))
-	copy(tb[8:], b)
-	var nonce [24]byte
-	_, err = rand.Read(nonce[:])
+	_ = binary.Write(enc, encBig, now.Unix())
+	_ = json.NewEncoder(enc).Encode(v)
+	err = enc.Close()
 	if err != nil {
 		return err
 	}
-	out := secretbox.Seal(nonce[:], tb, &nonce, config.Keys[0])
 	cookie := &http.Cookie{
 		Name:     config.name(),
-		Value:    base64.URLEncoding.EncodeToString(out),
+		Value:    out.String(),
 		Expires:  now.Add(config.maxAge()),
 		Path:     config.Path,
 		Domain:   config.Domain,
