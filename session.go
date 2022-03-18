@@ -83,6 +83,9 @@ func Get(r *http.Request, v interface{}, config *Config) error {
 	if err != nil {
 		return err
 	}
+	if len(t) < 32 {
+		return ErrInvalid
+	}
 	var nonce [24]byte
 	copy(nonce[:], t)
 	for _, key := range config.Keys {
