@@ -91,9 +91,9 @@ func Get(req *http.Request, v interface{}, config *Config) error {
 	if err != nil {
 		return err
 	}
-	ident := make([]age.Identity, len(config.Keys))
-	for i, key := range config.Keys {
-		ident[i] = key
+	var ident []age.Identity
+	for _, key := range config.Keys {
+		ident = append(ident, key)
 	}
 	r, err := age.Decrypt(base64.NewDecoder(encURL, strings.NewReader(cookie.Value)), ident...)
 	if err != nil {
@@ -114,9 +114,9 @@ func Get(req *http.Request, v interface{}, config *Config) error {
 // See encoding/json for encoding behavior.
 func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	now := time.Now()
-	recip := make([]age.Recipient, len(config.Keys))
-	for i, key := range config.Keys {
-		recip[i] = key.Recipient()
+	var recip []age.Recipient
+	for _, key := range config.Keys {
+		recip = append(recip, key.Recipient())
 	}
 	out := &strings.Builder{}
 	enc, err := age.Encrypt(base64.NewEncoder(encURL, out), recip...)
