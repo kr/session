@@ -99,24 +99,13 @@ func Get(req *http.Request, v interface{}, config *Config) error {
 // See encoding/json for encoding behavior.
 func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	now := time.Now()
-	var recip []age.Recipient
-	for _, key := range config.Keys {
-		recip = append(recip, key.Recipient())
-	}
-	out := &strings.Builder{}
-	enc, err := age.Encrypt(base64.NewEncoder(encURL, out), recip...)
-	if err != nil {
-		return err
-	}
-	_ = binary.Write(enc, encBig, now.Unix())
-	_ = json.NewEncoder(enc).Encode(v)
-	err = enc.Close()
+	token, err := GenerateToken(now, v, config)
 	if err != nil {
 		return err
 	}
 	cookie := &http.Cookie{
 		Name:     config.name(),
-		Value:    out.String(),
+		Value:    token,
 		Expires:  now.Add(config.maxAge()),
 		Path:     config.Path,
 		Domain:   config.Domain,
@@ -134,12 +123,36 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	return nil
 }
 
+// GetBasicAuth has the same semantics as Get but uses the token set in the
+// user field of the  Authorization header instad of a cookie.
 func GetBasicAuth(req *http.Request, v interface{}, config *Config) error {
 	token, _, ok := req.BasicAuth()
 	if !ok {
 		return ErrInvalid
 	}
 	return decode(token, v, config)
+}
+
+// GenerateToken generates a token set to expire after MaxAge. This is intended
+// to be used with GetBasicAuth, if using sessions, you probably want to use
+// Set.
+func GenerateToken(now time.Time, v interface{}, config *Config) (string, error) {
+	var recip []age.Recipient
+	for _, key := range config.Keys {
+		recip = append(recip, key.Recipient())
+	}
+	out := &strings.Builder{}
+	enc, err := age.Encrypt(base64.NewEncoder(encURL, out), recip...)
+	if err != nil {
+		return "", err
+	}
+	_ = binary.Write(enc, encBig, now.Unix())
+	_ = json.NewEncoder(enc).Encode(v)
+	err = enc.Close()
+	if err != nil {
+		return "", err
+	}
+	return out.String(), nil
 }
 
 func decode(s string, v interface{}, config *Config) error {
