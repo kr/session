@@ -92,13 +92,13 @@ func Get(req *http.Request, v interface{}, config *Config) error {
 	if err != nil {
 		return err
 	}
-	return decode(cookie.Value, v, config)
+	return Decode(cookie.Value, v, config)
 }
 
 // Set encodes a session from v into a cookie on w.
 // See encoding/json for encoding behavior.
 func Set(w http.ResponseWriter, v interface{}, config *Config) error {
-	token, err := GenerateToken(v, config)
+	token, err := Encode(v, config)
 	if err != nil {
 		return err
 	}
@@ -123,20 +123,32 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	return nil
 }
 
-// GetBasicAuth has the same semantics as Get but uses the token set in the
-// user field of the  Authorization header instad of a cookie.
-func GetBasicAuth(req *http.Request, v interface{}, config *Config) error {
-	token, _, ok := req.BasicAuth()
-	if !ok {
+// Decode decodes the encrypted token into v.
+// See encoding/json for decoding behavior.
+func Decode(token string, v interface{}, config *Config) error {
+	var ident []age.Identity
+	for _, key := range config.Keys {
+		ident = append(ident, key)
+	}
+	r, err := age.Decrypt(base64.NewDecoder(encURL, strings.NewReader(token)), ident...)
+	if err != nil {
+		return err
+	}
+	var ts int64
+	err = binary.Read(r, encBig, &ts)
+	if err != nil {
+		return err
+	}
+	if time.Since(time.Unix(ts, 0)) > config.maxAge() {
 		return ErrInvalid
 	}
-	return decode(token, v, config)
+	return json.NewDecoder(r).Decode(v)
 }
 
-// GenerateToken generates a token set to expire after MaxAge. This is intended
-// to be used with GetBasicAuth. If using sessions, you probably want to use
-// Set.
-func GenerateToken(v interface{}, config *Config) (string, error) {
+// Encode encodes a token set to expire after MaxAge. This is intended to be
+// used with Decode. If using sessions, you probably want to use Set.
+// See encoding/json for encoding behavior.
+func Encode(v interface{}, config *Config) (string, error) {
 	now := time.Now()
 	var recip []age.Recipient
 	for _, key := range config.Keys {
@@ -154,24 +166,4 @@ func GenerateToken(v interface{}, config *Config) (string, error) {
 		return "", err
 	}
 	return out.String(), nil
-}
-
-func decode(s string, v interface{}, config *Config) error {
-	var ident []age.Identity
-	for _, key := range config.Keys {
-		ident = append(ident, key)
-	}
-	r, err := age.Decrypt(base64.NewDecoder(encURL, strings.NewReader(s)), ident...)
-	if err != nil {
-		return err
-	}
-	var ts int64
-	err = binary.Read(r, encBig, &ts)
-	if err != nil {
-		return err
-	}
-	if time.Since(time.Unix(ts, 0)) > config.maxAge() {
-		return ErrInvalid
-	}
-	return json.NewDecoder(r).Decode(v)
 }
