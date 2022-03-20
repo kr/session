@@ -98,11 +98,11 @@ func Get(req *http.Request, v interface{}, config *Config) error {
 // Set encodes a session from v into a cookie on w.
 // See encoding/json for encoding behavior.
 func Set(w http.ResponseWriter, v interface{}, config *Config) error {
-	now := time.Now()
-	token, err := GenerateToken(now, v, config)
+	token, err := GenerateToken(v, config)
 	if err != nil {
 		return err
 	}
+	now := time.Now()
 	cookie := &http.Cookie{
 		Name:     config.name(),
 		Value:    token,
@@ -136,7 +136,8 @@ func GetBasicAuth(req *http.Request, v interface{}, config *Config) error {
 // GenerateToken generates a token set to expire after MaxAge. This is intended
 // to be used with GetBasicAuth, if using sessions, you probably want to use
 // Set.
-func GenerateToken(now time.Time, v interface{}, config *Config) (string, error) {
+func GenerateToken(v interface{}, config *Config) (string, error) {
+	now := time.Now()
 	var recip []age.Recipient
 	for _, key := range config.Keys {
 		recip = append(recip, key.Recipient())
