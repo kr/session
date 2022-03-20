@@ -134,7 +134,7 @@ func GetBasicAuth(req *http.Request, v interface{}, config *Config) error {
 }
 
 // GenerateToken generates a token set to expire after MaxAge. This is intended
-// to be used with GetBasicAuth, if using sessions, you probably want to use
+// to be used with GetBasicAuth. If using sessions, you probably want to use
 // Set.
 func GenerateToken(v interface{}, config *Config) (string, error) {
 	now := time.Now()
