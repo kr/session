@@ -73,15 +73,16 @@ func (c *Config) name() string {
 	return c.Name
 }
 
+// Errors
 var (
 	// ErrTooLong indicates that an encoded session cookie is too long
 	// to expect web browsers to store it.
 	ErrTooLong = errors.New("encoded session too long")
 
-	// ErrInvalid indicates that a session cookie could not be decoded,
-	// either because its expiration time is in the past or because none
-	// of the provided keys could decrypt it.
-	ErrInvalid = errors.New("invalid session cookie")
+	// ErrInvalid indicates that a session cookie or authentication token
+	// could not be decoded, either because its expiration time is in the
+	// past or because none of the provided keys could decrypt it.
+	ErrInvalid = errors.New("invalid session cookie or token")
 )
 
 // Get decodes a session from req into v.
@@ -91,23 +92,7 @@ func Get(req *http.Request, v interface{}, config *Config) error {
 	if err != nil {
 		return err
 	}
-	var ident []age.Identity
-	for _, key := range config.Keys {
-		ident = append(ident, key)
-	}
-	r, err := age.Decrypt(base64.NewDecoder(encURL, strings.NewReader(cookie.Value)), ident...)
-	if err != nil {
-		return err
-	}
-	var ts int64
-	err = binary.Read(r, encBig, &ts)
-	if err != nil {
-		return err
-	}
-	if time.Since(time.Unix(ts, 0)) > config.maxAge() {
-		return errors.New("expired cookie")
-	}
-	return json.NewDecoder(r).Decode(v)
+	return decode(cookie.Value, v, config)
 }
 
 // Set encodes a session from v into a cookie on w.
@@ -147,4 +132,32 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	}
 	w.Header().Add("Set-Cookie", s)
 	return nil
+}
+
+func GetBasicAuth(req *http.Request, v interface{}, config *Config) error {
+	token, _, ok := req.BasicAuth()
+	if !ok {
+		return ErrInvalid
+	}
+	return decode(token, v, config)
+}
+
+func decode(s string, v interface{}, config *Config) error {
+	var ident []age.Identity
+	for _, key := range config.Keys {
+		ident = append(ident, key)
+	}
+	r, err := age.Decrypt(base64.NewDecoder(encURL, strings.NewReader(s)), ident...)
+	if err != nil {
+		return err
+	}
+	var ts int64
+	err = binary.Read(r, encBig, &ts)
+	if err != nil {
+		return err
+	}
+	if time.Since(time.Unix(ts, 0)) > config.maxAge() {
+		return ErrInvalid
+	}
+	return json.NewDecoder(r).Decode(v)
 }
