@@ -73,15 +73,16 @@ func (c *Config) name() string {
 	return c.Name
 }
 
+// Errors
 var (
 	// ErrTooLong indicates that an encoded session cookie is too long
 	// to expect web browsers to store it.
 	ErrTooLong = errors.New("encoded session too long")
 
-	// ErrInvalid indicates that a session cookie could not be decoded,
-	// either because its expiration time is in the past or because none
-	// of the provided keys could decrypt it.
-	ErrInvalid = errors.New("invalid session cookie")
+	// ErrInvalid indicates that a session cookie or authentication token
+	// could not be decoded, either because its expiration time is in the
+	// past or because none of the provided keys could decrypt it.
+	ErrInvalid = errors.New("invalid session cookie or token")
 )
 
 // Get decodes a session from req into v.
@@ -91,47 +92,20 @@ func Get(req *http.Request, v interface{}, config *Config) error {
 	if err != nil {
 		return err
 	}
-	var ident []age.Identity
-	for _, key := range config.Keys {
-		ident = append(ident, key)
-	}
-	r, err := age.Decrypt(base64.NewDecoder(encURL, strings.NewReader(cookie.Value)), ident...)
-	if err != nil {
-		return err
-	}
-	var ts int64
-	err = binary.Read(r, encBig, &ts)
-	if err != nil {
-		return err
-	}
-	if time.Since(time.Unix(ts, 0)) > config.maxAge() {
-		return errors.New("expired cookie")
-	}
-	return json.NewDecoder(r).Decode(v)
+	return Decode(cookie.Value, v, config)
 }
 
 // Set encodes a session from v into a cookie on w.
 // See encoding/json for encoding behavior.
 func Set(w http.ResponseWriter, v interface{}, config *Config) error {
+	token, err := Encode(v, config)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
-	var recip []age.Recipient
-	for _, key := range config.Keys {
-		recip = append(recip, key.Recipient())
-	}
-	out := &strings.Builder{}
-	enc, err := age.Encrypt(base64.NewEncoder(encURL, out), recip...)
-	if err != nil {
-		return err
-	}
-	_ = binary.Write(enc, encBig, now.Unix())
-	_ = json.NewEncoder(enc).Encode(v)
-	err = enc.Close()
-	if err != nil {
-		return err
-	}
 	cookie := &http.Cookie{
 		Name:     config.name(),
-		Value:    out.String(),
+		Value:    token,
 		Expires:  now.Add(config.maxAge()),
 		Path:     config.Path,
 		Domain:   config.Domain,
@@ -147,4 +121,49 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	}
 	w.Header().Add("Set-Cookie", s)
 	return nil
+}
+
+// Decode decodes the encrypted token into v.
+// See encoding/json for decoding behavior.
+func Decode(token string, v interface{}, config *Config) error {
+	var ident []age.Identity
+	for _, key := range config.Keys {
+		ident = append(ident, key)
+	}
+	r, err := age.Decrypt(base64.NewDecoder(encURL, strings.NewReader(token)), ident...)
+	if err != nil {
+		return err
+	}
+	var ts int64
+	err = binary.Read(r, encBig, &ts)
+	if err != nil {
+		return err
+	}
+	if time.Since(time.Unix(ts, 0)) > config.maxAge() {
+		return ErrInvalid
+	}
+	return json.NewDecoder(r).Decode(v)
+}
+
+// Encode encodes a token set to expire after MaxAge. This is intended to be
+// used with Decode. If using sessions, you probably want to use Set.
+// See encoding/json for encoding behavior.
+func Encode(v interface{}, config *Config) (string, error) {
+	now := time.Now()
+	var recip []age.Recipient
+	for _, key := range config.Keys {
+		recip = append(recip, key.Recipient())
+	}
+	out := &strings.Builder{}
+	enc, err := age.Encrypt(base64.NewEncoder(encURL, out), recip...)
+	if err != nil {
+		return "", err
+	}
+	_ = binary.Write(enc, encBig, now.Unix())
+	_ = json.NewEncoder(enc).Encode(v)
+	err = enc.Close()
+	if err != nil {
+		return "", err
+	}
+	return out.String(), nil
 }
