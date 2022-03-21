@@ -21,31 +21,24 @@ var (
 	encURL = base64.URLEncoding
 )
 
+// defaultCookie is the real value that never changes.
+var defaultCookie = DefaultCookie
+
+// DefaultCookie documents the Cookie settings used by functions
+// in this package when Config.Cookie is nil.
+//
+// Changes to DefaultCookie will not affect the behavior of
+// this package. It is only for documentation.
+var DefaultCookie = http.Cookie{
+	Name:     "session",
+	Path:     "/",
+	MaxAge:   100 * 365 * 24 * 60 * 60,
+	Secure:   true,
+	HttpOnly: true,
+	SameSite: http.SameSiteLaxMode,
+}
+
 type Config struct {
-	// The cookie name.
-	// If empty, "session" is used.
-	Name string
-
-	// The cookie path.
-	// If empty, "/" is used.
-	Path string
-
-	// The cookie domain.
-	// If empty, the request host is used.
-	Domain string
-
-	// Whether the cookie should be limited to HTTPS.
-	Secure bool
-
-	// Whether the cookie will not be available to JavaScript.
-	HTTPOnly bool
-
-	// Maximum idle time for a session.
-	// This is used to set cookie expiration and
-	// enforce a TTL on secret boxes.
-	// If 0, it is taken to be 100 years.
-	MaxAge time.Duration
-
 	// Keys is used to encrypt and decrypt sessions.
 	//
 	// Sessions are encrypted to all keys to facilitate
@@ -57,20 +50,19 @@ type Config struct {
 	//
 	// See filippo.io/age.
 	Keys []*age.X25519Identity
+
+	// Cookie controls encoding and decoding cookies, as in package
+	// http. This package sets Value and uses all other fields as-is.
+	//
+	// If nil, DefaultCookie is used.
+	Cookie *http.Cookie
 }
 
-func (c *Config) maxAge() time.Duration {
-	if c.MaxAge == 0 {
-		return 100 * 365 * 24 * time.Hour
+func (c *Config) cookie() http.Cookie {
+	if c.Cookie == nil {
+		return defaultCookie
 	}
-	return c.MaxAge
-}
-
-func (c *Config) name() string {
-	if c.Name == "" {
-		return "session"
-	}
-	return c.Name
+	return *c.Cookie
 }
 
 // Errors
@@ -88,7 +80,7 @@ var (
 // Get decodes a session from req into v.
 // See encoding/json for decoding behavior.
 func Get(req *http.Request, v interface{}, config *Config) error {
-	cookie, err := req.Cookie(config.name())
+	cookie, err := req.Cookie(config.cookie().Name)
 	if err != nil {
 		return err
 	}
@@ -102,19 +94,8 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now()
-	cookie := &http.Cookie{
-		Name:     config.name(),
-		Value:    token,
-		Expires:  now.Add(config.maxAge()),
-		Path:     config.Path,
-		Domain:   config.Domain,
-		Secure:   config.Secure,
-		HttpOnly: config.HTTPOnly,
-	}
-	if cookie.Path == "" {
-		cookie.Path = "/"
-	}
+	cookie := config.cookie()
+	cookie.Value = token
 	s := cookie.String()
 	if len(s) > maxSize {
 		return ErrTooLong
@@ -145,11 +126,11 @@ func Decode(token string, v interface{}, config *Config) error {
 	return json.NewDecoder(r).Decode(v)
 }
 
-// Encode encodes a token set to expire after MaxAge. This is intended to be
-// used with Decode. If using sessions, you probably want to use Set.
-// See encoding/json for encoding behavior.
+// Encode encodes a token set to expire after config.Cookie.MaxAge. This
+// is intended to be used with Decode. If using sessions, you probably
+// want to use Set. See encoding/json for encoding behavior.
 func Encode(v interface{}, config *Config) (string, error) {
-	expires := time.Now().Add(config.maxAge())
+	expires := time.Now().Unix() + int64(config.cookie().MaxAge)
 	var recip []age.Recipient
 	for _, key := range config.Keys {
 		recip = append(recip, key.Recipient())
@@ -159,7 +140,7 @@ func Encode(v interface{}, config *Config) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_ = binary.Write(enc, encBig, expires.Unix())
+	_ = binary.Write(enc, encBig, expires)
 	_ = json.NewEncoder(enc).Encode(v)
 	err = enc.Close()
 	if err != nil {
