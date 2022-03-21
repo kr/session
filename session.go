@@ -23,10 +23,6 @@ import (
 	"filippo.io/age"
 )
 
-const (
-	maxSize = 4093
-)
-
 var (
 	encBig = binary.BigEndian
 	encURL = base64.URLEncoding
@@ -105,11 +101,7 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	}
 	cookie := config.cookie()
 	cookie.Value = token
-	s := cookie.String()
-	if len(s) > maxSize {
-		return errors.New("encoded session too long")
-	}
-	w.Header().Add("Set-Cookie", s)
+	w.Header().Add("Set-Cookie", cookie.String())
 	return nil
 }
 
