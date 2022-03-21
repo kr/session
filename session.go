@@ -134,12 +134,12 @@ func Decode(token string, v interface{}, config *Config) error {
 	if err != nil {
 		return err
 	}
-	var ts int64
-	err = binary.Read(r, encBig, &ts)
+	var expires int64
+	err = binary.Read(r, encBig, &expires)
 	if err != nil {
 		return err
 	}
-	if time.Since(time.Unix(ts, 0)) > config.maxAge() {
+	if time.Since(time.Unix(expires, 0)) > 0 {
 		return ErrInvalid
 	}
 	return json.NewDecoder(r).Decode(v)
@@ -149,7 +149,7 @@ func Decode(token string, v interface{}, config *Config) error {
 // used with Decode. If using sessions, you probably want to use Set.
 // See encoding/json for encoding behavior.
 func Encode(v interface{}, config *Config) (string, error) {
-	now := time.Now()
+	expires := time.Now().Add(config.maxAge())
 	var recip []age.Recipient
 	for _, key := range config.Keys {
 		recip = append(recip, key.Recipient())
@@ -159,7 +159,7 @@ func Encode(v interface{}, config *Config) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_ = binary.Write(enc, encBig, now.Unix())
+	_ = binary.Write(enc, encBig, expires.Unix())
 	_ = json.NewEncoder(enc).Encode(v)
 	err = enc.Close()
 	if err != nil {
