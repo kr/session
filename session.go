@@ -137,13 +137,18 @@ func Encode(v interface{}, config *Config) (string, error) {
 		recip = append(recip, key.Recipient())
 	}
 	out := &strings.Builder{}
-	enc, err := age.Encrypt(base64.NewEncoder(encURL, out), recip...)
+	be := base64.NewEncoder(encURL, out)
+	enc, err := age.Encrypt(be, recip...)
 	if err != nil {
 		return "", err
 	}
 	_ = binary.Write(enc, encBig, expires)
 	_ = json.NewEncoder(enc).Encode(v)
 	err = enc.Close()
+	if err != nil {
+		return "", err
+	}
+	err = be.Close()
 	if err != nil {
 		return "", err
 	}
