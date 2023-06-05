@@ -101,8 +101,7 @@ func Set(w http.ResponseWriter, v interface{}, config *Config) error {
 	}
 	cookie := config.cookie()
 	cookie.Value = token
-	w.Header().Add("Set-Cookie", cookie.String())
-	return nil
+	return setCookie(w.Header(), &cookie)
 }
 
 // Decode decodes the encrypted token into v.
@@ -153,4 +152,39 @@ func Encode(v interface{}, config *Config) (string, error) {
 		return "", err
 	}
 	return out.String(), nil
+}
+
+// setCookie sets the given cookie in h.
+// If any existing Set-Cookie values have the same cookie name,
+// it replaces each one,
+// otherwise it adds a new one.
+func setCookie(h http.Header, cookie *http.Cookie) error {
+	s := cookie.String()
+	if s == "" {
+		return errors.New("invalid")
+	}
+	didReplace := false
+	a := h["Set-Cookie"]
+	for i := range a {
+		if isValidCookie(a[i], cookie.Name) {
+			a[i] = s
+			didReplace = true
+		}
+	}
+	if !didReplace {
+		h.Add("Set-Cookie", s)
+	}
+	return nil
+}
+
+// isValidCookie returns whether s is a valid Set-Cookie encoding
+// of a cookie with the given name.
+func isValidCookie(s, name string) bool {
+	resp := &http.Response{Header: http.Header{"Set-Cookie": []string{s}}}
+	for _, c := range resp.Cookies() {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }
